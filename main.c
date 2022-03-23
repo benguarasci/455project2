@@ -15,130 +15,266 @@
 
 /*-----------------------------------------------------------*/
 #define mainQUEUE_LENGTH 100
+#define STATIC_TASK_STACK 200
 
-enum task_type {PERIODIC,APERIODIC}; 
- 
+StackType_t xStack [STATIC_TASK_STACK];
+
+enum task_type {PERIODIC,APERIODIC};
+
 // Struct Inits
-struct dd_task { 
-	TaskHandle_t t_handle;  
-	uint32_t type; 
-	uint32_t task_id;  
+struct dd_task {
+	TaskHandle_t t_handle;
+	uint32_t type;
+	uint32_t task_id;
 	uint32_t release_time;
-	uint32_t execution_time;  
-	uint32_t absolute_deadline; 
-	uint32_t completion_time; 
+	uint32_t execution_time;
+	uint32_t absolute_deadline;
+	uint32_t completion_time;
 };
 
-struct dd_task_list { 
-	dd_task task;    
-	struct dd_task_list *next_task; 
+struct dd_task_list {
+	struct dd_task task;
+	struct dd_task_list *next_task;
 };
 
 // DD Prototypes
-void create_dd_task(TaskHandle_t t_handle, uint32_t type, uint32_t task_id, uint32_t absolute_deadline); 
-void delete_dd_task(uint32_t task_id); 
+void release_dd_task(uint32_t type, uint32_t task_id, uint32_t execution_time, uint32_t absolute_deadline);
+void complete_dd_task(uint32_t task_id);
 void get_active_dd_task_list(void);
-void get_complete_dd_task_list(void); 
+void get_complete_dd_task_list(void);
 void get_overdue_dd_task_list(void);
 
 // F Prototypes
 void xDeadlineScheduler(void *pvParameters);
 void xUserTasks(void *pvParameters);
-void xDeadlineTaskGenerator1(void *pvParameters);
-void xDeadlineTaskGenerator2(void *pvParameters);
-void xDeadlineTaskGenerator3(void *pvParameters);
+void xDeadlineTask1Generator(void *pvParameters);
+void xDeadlineTask2Generator(void *pvParameters);
+void xDeadlineTask3Generator(void *pvParameters);
 void xMonitorTask(void *pvParameters);
 
-xQueueHandle new_taskQueue = 0;
-
-
-
-
-
+// Queue Definitions
+xQueueHandle message_release_queue = 0;
+xQueueHandle message_response_queue = 0;
 
 /*-----------------------------------------------------------*/
 
-static void xDeadlineScheduler(void *pvParameters) {
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
-}
+int main(void) {
+	// Test bench variable
+	int testBench = 1;
 
-/*-----------------------------------------------------------*/
+	// Initialize System
+	SystemInit();
 
-static void xUserTasks(void *pvParameters) {
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
-}
-
-/*-----------------------------------------------------------*/
-
-static void xDeadlineTaskGenerator1(void *pvParameters) {
-	while(1){
-
-	}
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
-}
-
-/*-----------------------------------------------------------*/
-
-static void xDeadlineTaskGenerator2(void *pvParameters) {
-	while(1){
-
-	}
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
-}
-
-/*-----------------------------------------------------------*/
-
-static void xDeadlineTaskGenerator3(void *pvParameters) {
-	while(1){
-
-	}
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
-}
-
-/*-----------------------------------------------------------*/
-
-static void xMonitorTask(void *pvParameters) {
-	// Delay the next task by 1000 ticks
-	vTaskDelay(1000);
-}
-
-/*-----------------------------------------------------------*/
-
-int main(void)
-{
 	// Create the tasks
 	xTaskCreate(xDeadlineScheduler, "DeadlineScheduler", configMINIMAL_STACK_SIZE, NULL, 4, NULL);
 	xTaskCreate(xUserTasks, "UserTasks", configMINIMAL_STACK_SIZE, NULL, 3, NULL);
-	xTaskCreate(xDeadlineTaskGenerator1, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
-	xTaskCreate(xDeadlineTaskGenerator2, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
-	xTaskCreate(xDeadlineTaskGenerator3, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+	xTaskCreate(xDeadlineTask1Generator, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, (void *) testBench, 2, NULL);
+	xTaskCreate(xDeadlineTask2Generator, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, (void *) testBench, 2, NULL);
+	xTaskCreate(xDeadlineTask3Generator, "DeadlineTaskGenerator", configMINIMAL_STACK_SIZE, (void *) testBench, 2, NULL);
 	xTaskCreate(xMonitorTask, "MonitorTask", configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+
+	// Get size of struct
+	int structSize = sizeof(struct dd_task);
+
+	// Create message queue and message response queue
+	message_release_queue = xQueueCreate(1,structSize);
+	message_response_queue = xQueueCreate(1,structSize);
+	vQueueAddToRegistry(message_release_queue, "ReleaseMessage");
+	vQueueAddToRegistry(message_response_queue, "ReponseMessage");
+
+	/* Start Scheduler */
+	vTaskStartScheduler();
 
 	return 0;
 }
 
+/*-----------------------------------------------------------*/
 
+ void xDeadlineTask1Generator(void *pvParameters) {
+	// Read test bench
+	int bench = (int) pvParameters;
 
+	uint32_t count = 0;
+	uint32_t period;
+	uint32_t execution;
+	while(1){
+		if(bench == 1){
+			period = 500; execution = 95;
+		} else if(bench == 2){
+			period = 250; execution = 95;
+		}else{
+			period = 500; execution = 100;
+		}
+		// Increment count by period
+		count = count + period;
+		// Releasing task
+		release_dd_task(0, 1, execution, count);
+		// After task released delay by period
+		vTaskDelay(pdMS_TO_TICKS(period));
+	}
+}
 
-void release_dd_task(uint32_t type, uint32_t task_id, uint32_t execution_time, uint32_t absolute_deadline){
+void xDeadlineTask2Generator(void *pvParameters) {
+	// Read test bench
+	int bench = (int) pvParameters;
 
+	uint32_t count = 0;
+	uint32_t period;
+	uint32_t execution;
+	while(1){
+		if(bench == 1){
+			period = 500; execution = 150;
+		} else if(bench == 2){
+			period = 500; execution = 150;
+		}else{
+			period = 500; execution = 200;
+		}
+		// Increment count by period
+		count = count + period;
+		// Releasing task
+		release_dd_task(0, 2, execution, count);
+		// After task released delay by period
+		vTaskDelay(pdMS_TO_TICKS(period));
+	}
+}
+
+void xDeadlineTask3Generator(void *pvParameters) {
+	// Read test bench
+	int bench = (int) pvParameters;
+
+	uint32_t count = 0;
+	uint32_t period;
+	uint32_t execution;
+	while(1){
+		if(bench == 1){
+			period = 750; execution = 250;
+		} else if(bench == 2){
+			period = 750; execution = 250;
+		}else{
+			period = 500; execution = 200;
+		}
+		// Increment count by period
+		count = count + period;
+		// Releasing task
+		release_dd_task(0, 3, execution, count);
+		// After task released delay by period
+		vTaskDelay(pdMS_TO_TICKS(period));
+	}
+}
+
+/*-----------------------------------------------------------*/
+
+void complete_dd_task(uint32_t task_id) {
+
+}
+
+/*-----------------------------------------------------------*/
+
+void release_dd_task(uint32_t type, uint32_t task_id, uint32_t execution_time, uint32_t absolute_deadline) {
+	// Create new task struct with given parameters
 	struct dd_task task;
 	task.type = type;
 	task.task_id = task_id;
 	task.execution_time = execution_time;
 	task.absolute_deadline = absolute_deadline;
 
+	// Next send the struct via message queue
+	xQueueSend(message_release_queue, &task, 50);
 
-	xTaskCreate(xUserDefinedTask, "UserDefinedTask", configMINIMAL_STACK_SIZE, task.execution_time, 1, task.t_handle);
+	// Lastly await response from xDeadlineScheduler
+	int response;
+	while(1) if (xQueueReceive(message_response_queue, &response, 50)) break;
+}
+
+/*-----------------------------------------------------------*/
+
+void xUserTasks(void *pvParameters) {
+	// Get times
+	int executionTime = (int) pvParameters;
+	int startTime = (int) xTaskGetTickCount();
+	int endTime = startTime + executionTime;
+
+	// Wait until endTime has been passed
+	while(endTime > (int) xTaskGetTickCount());
+
+	// Send completed task to completed_queue
+	complete_dd_task(xTaskGetCurrentTaskHandle());
+}
+
+/*-----------------------------------------------------------*/
+
+void xDeadlineScheduler(void *pvParameters) {
+	// Create active_task_list
+	struct dd_task_list *active_task_list = (struct dd_task_list*) malloc(sizeof(struct dd_task_list));
+	// Set second value to NULL
+	active_task_list->next_task = NULL;
+
+	// Create completed_task_list
+	struct dd_task_list *completed_task_list = (struct dd_task_list*) malloc(sizeof(struct dd_task_list));
+	// Set second value to NULL
+	completed_task_list->next_task = NULL;
+
+	// Create overdue_task_list
+	struct dd_task_list *overdue_task_list = (struct dd_task_list*) malloc(sizeof(struct dd_task_list));
+	// Set second value to NULL
+	overdue_task_list->next_task = NULL;
+
+	struct dd_task user_task;
+
+	while(1){
+		if(xQueueReceive(message_release_queue, &user_task, 50)){
+			// Init new list node
+			struct dd_task_list *new_user_task = (struct dd_task_list*) malloc(sizeof(struct dd_task_list));
+			new_user_task->task = user_task;
+			// Create copy of head of active_task_list
+			struct dd_task_list *active_head = active_task_list;
+			// Iterate through active_task_list and new user_task to list based on absolute_deadline
+			while(active_head != NULL) {
+				// Check asbolute deadline of task in active list against new task
+				if(active_head->next_task->task.absolute_deadline > new_user_task->task.absolute_deadline) {
+					new_user_task->next_task = active_head->next_task;
+					active_head->next_task = new_user_task;
+					break;
+				}
+				active_head = active_head->next_task;
+			}
+			new_user_task->next_task = active_head->next_task;
+			active_head->next_task = new_user_task;
+		}
+		// Next check message_release_queue again, if there's a value continue again to start of while loop
+		// Otherwise start the task at the head of the active_list
+		if(xQueuePeek(message_release_queue, &user_task, 50)) {
+			continue;
+		} else {
+			// Get head of list
+			struct dd_task task_to_run = active_task_list->next_task->task;
+			// Create new task
+			xTaskCreate(xUserTasks, "UserDefinedTask", configMINIMAL_STACK_SIZE,(void *) task_to_run.execution_time, 1, &(task_to_run.t_handle));
+			// Set head of list to next_task
+			active_task_list = active_task_list->next_task;
+
+
+			//wait to recieve message from complete_dd_task
+
+			// Add struct to completed_tasks list
+
+
+		}
+
+
+
+
+	}
 
 
 }
 
+/*-----------------------------------------------------------*/
+
+void xMonitorTask(void *pvParameters) {
+	// Delay the next task by 1000 ticks
+	vTaskDelay(1000);
+}
 
 /*-----------------------------------------------------------*/
 
